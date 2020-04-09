@@ -85,29 +85,34 @@ def instances():
     help="Create snapshots of all volumes")
 @click.option('--project',default=None,
     help="Only instances for project (tag Project:<name>)")
-def create_snapshots(project):
+@click.option('--force',is_flag=True,
+    help="All instances")
+def create_snapshots(project,force):
     "Create snapshots for EC2 instances"
 
     instances = filter_instances(project)
 
-    for i in instances:
-        print("Stopping {0}...".format(i.id))
+    if project or force:
+        for i in instances:
+            print("Stopping {0}...".format(i.id))
 
-        i.stop()
-        i.wait_until_stopped()
+            i.stop()
+            i.wait_until_stopped()
 
-        for v in i.volumes.all():
-            if has_pending_snapshot(v):
-                print(" Skipping {0}, snapshot already in progress".format(v.id))
-                continue
-            print("  Creating snapshot of {0}".format(v.id))
-            v.create_snapshot(Description="Created by Shotty")
+            for v in i.volumes.all():
+                if has_pending_snapshot(v):
+                    print(" Skipping {0}, snapshot already in progress".format(v.id))
+                    continue
+                print("  Creating snapshot of {0}".format(v.id))
+                v.create_snapshot(Description="Created by Shotty")
 
-        print("Starting {0}...".format(i.id))
-        i.start()
-        i.wait_until_running()
+            print("Starting {0}...".format(i.id))
+            i.start()
+            i.wait_until_running()
 
-    print("Job's done!")
+        print("Job's done!")
+    else:
+        print("This command requires a project name. For more info refer to --help")
 
     return
 
@@ -141,39 +146,70 @@ def list_instances(project):
 @instances.command('stop')
 @click.option("--project", default=None,
     help="Only instances for project")
-def  stop_instances(project):
+@click.option("--force", is_flag=True,
+        help="Forces all instance start")
+def  stop_instances(project,force):
     "Stop EC2 Instances"
 
     instances = filter_instances(project)
 
-    for i in instances:
-        print("stopping {0}...".format(i.id))
-        try:
-            i.stop()
-        except botocore.exceptions.ClientError as e:
-            print(" Could not stop {0}.".format(i.id) + str(e))
-            continue
+    if project or force:
+        for i in instances:
+            print("stopping {0}...".format(i.id))
+            try:
+                i.stop()
+            except botocore.exceptions.ClientError as e:
+                print(" Could not stop {0}.".format(i.id) + str(e))
+                continue
+    else:
+        print("This command requires a project name. For more info refer to --help")
 
     return
 
 @instances.command('start')
 @click.option("--project", default=None,
     help="Only instances for project")
-def start_instances(project):
+@click.option("--force", is_flag=True,
+    help="Forces all instance start")
+def start_instances(project, force):
     "Start EC2 Instances"
 
     instances = filter_instances(project)
-
-    for i in instances:
-        print("starting {0}...".format(i.id))
-        try:
-            i.start()
-        except botocore.exceptions.ClientError as e:
-            print(" Could not start {0}.".format(i.id) + str(e))
-            continue
+    if project or force:
+        for i in instances:
+            print("starting {0}...".format(i.id))
+            try:
+                i.start()
+            except botocore.exceptions.ClientError as e:
+                print(" Could not start {0}.".format(i.id) + str(e))
+                continue
+    else:
+        print("This command requires a project name. For more info refer to --help")
 
     return
 
+@instances.command('reboot')
+@click.option("--project", default=None,
+    help="Only instances for project")
+@click.option("--force", is_flag=True,
+    help="Forces all instance reboot")
+def reboot_instances(project, force):
+    "Reboot EC2 Instances"
+
+    instances = filter_instances(project)
+
+    if project or force:
+        for i in instances:
+            print("rebooting {0}...".format(i.id))
+            try:
+                i.reboot()
+            except botocore.exceptions.ClientError as e:
+                print(" Could not reboot {0}.".format(i.id) + str(e))
+                continue
+    else:
+        print("This command requires a project name. For more info refer to --help")
+
+    return
 
 if __name__ == '__main__':
     cli()
