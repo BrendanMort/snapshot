@@ -110,22 +110,26 @@ def create_snapshots(ctx, project,force):
     if project or force:
         for i in instances:
             print("Stopping {0}...".format(i.id))
+            try:
+                i.stop()
+                i.wait_until_stopped()
 
-            i.stop()
-            i.wait_until_stopped()
+                for v in i.volumes.all():
+                    if has_pending_snapshot(v):
+                        print(" Skipping {0}, snapshot already in progress".format(v.id))
+                        continue
+                    print("  Creating snapshot of {0}".format(v.id))
+                    v.create_snapshot(Description="Created by Shotty")
 
-            for v in i.volumes.all():
-                if has_pending_snapshot(v):
-                    print(" Skipping {0}, snapshot already in progress".format(v.id))
-                    continue
-                print("  Creating snapshot of {0}".format(v.id))
-                v.create_snapshot(Description="Created by Shotty")
+                print("Starting {0}...".format(i.id))
+                i.start()
+                i.wait_until_running()
 
-            print("Starting {0}...".format(i.id))
-            i.start()
-            i.wait_until_running()
+                print("Job's done!")
 
-        print("Job's done!")
+            except botocore.exceptions.ClientError as e:
+                print(" Could not create snapshot for {0}.".format(i.id) + str(e))
+                continue
     else:
         print("This command requires a project name. For more info refer to --help")
 
