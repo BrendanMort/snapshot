@@ -116,27 +116,32 @@ def create_snapshots(ctx, project,force, instance_id):
 
     if project or force or instance_id:
         for i in instances:
-            print("Stopping {0}...".format(i.id))
-            try:
-                i.stop()
-                i.wait_until_stopped()
+          instance_state = i.state['Name']
+          instance_state_current = instance_state
+          for v in i.volumes.all():
+              if has_pending_snapshot(v):
+                  print(" Skipping {0}, snapshot already in progress".format(v.id))
+                  continue
+              print("  Creating snapshot of {0}".format(v.id))
+              try:
+                  if instance_state == "running" and instance_state_current != "running":
+                        print("Stopping {0}...".format(i.id))
+                        i.stop()
+                        i.wait_until_stopped()
+                        instance_state_current = "stopped"
+                  v.create_snapshot(Description="Created by Shotty")
 
-                for v in i.volumes.all():
-                    if has_pending_snapshot(v):
-                        print(" Skipping {0}, snapshot already in progress".format(v.id))
-                        continue
-                    print("  Creating snapshot of {0}".format(v.id))
-                    v.create_snapshot(Description="Created by Shotty")
+              except botocore.exceptions.ClientError as e:
+                    print(" Could not create snapshot for {0}.".format(i.id) + str(e))
+                    continue
 
-                print("Starting {0}...".format(i.id))
-                i.start()
-                i.wait_until_running()
+        if instance_state == "running" and instance_state_now == "stopped":
+            print("Starting {0}...".format(i.id))
+            i.start()
+            i.wait_until_running()
 
-                print("Job's done!")
+        print("Job's done!")
 
-            except botocore.exceptions.ClientError as e:
-                print(" Could not create snapshot for {0}.".format(i.id) + str(e))
-                continue
     else:
         print("This command requires a project name. For more info refer to --help")
 
