@@ -7,7 +7,7 @@ def start_session(profile = 'shotty'):
     ec2 = session.resource('ec2')
     return ec2
 
-def filter_instances(ec2, project, instance_id):
+def filter_instances(ec2, project, instance_id = None):
     instances = []
     if instance_id:
         instances = ec2.instances.filter(InstanceIds=[instance_id])
@@ -151,12 +151,6 @@ def list_instances(ctx, project):
 
     ec2 = start_session(ctx.obj["PROFILE"])
     instances = filter_instances(ec2, project)
-
-    if project:
-        filters = [{'Name':'tag:Project','Values':[project]}]
-        instances = ec2.instances.filter(Filters=filters)
-    else:
-        instances = ec2.instances.all()
 
     for i in instances:
         tags = { t['Key']: t['Value'] for t in i.tags or [] }
