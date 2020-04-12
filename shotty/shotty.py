@@ -1,9 +1,12 @@
 import boto3
 import botocore
 import click
+import time
+import calendar
 
-def start_session(profile = 'shotty'):
-    session = boto3.Session(profile_name = profile)
+
+def start_session(profile = 'shotty', region = 'us-east-2'):
+    session = boto3.Session(profile_name = profile, region_name = region)
     ec2 = session.resource('ec2')
     return ec2
 
@@ -26,13 +29,14 @@ def has_pending_snapshot(volume):
 @click.group()
 @click.option('--profile', default = 'shotty',
     help="Select a profile for shotty to use")
-
+@click.option('--region', default = 'us-east-2',
+    help="Select a region for shotty to use")
 @click.pass_context
-def cli(ctx, profile):
+def cli(ctx, profile, region):
     """Shotty manages snapshots"""
     ctx.ensure_object(dict)
     ctx.obj['PROFILE'] = profile
-
+    ctx.obj['REGION'] = region
 
 @cli.group('snapshots')
 def snapshots():
@@ -49,7 +53,7 @@ def snapshots():
 def list_snapshots(ctx, project, list_all, instance_id):
     "List EC2 snapshots"
 
-    ec2 = start_session(ctx.obj["PROFILE"])
+    ec2 = start_session(ctx.obj["PROFILE"], ctx.obj["REGION"])
     instances = filter_instances(ec2, project, instance_id)
 
     for i in instances:
@@ -81,7 +85,7 @@ def volumes():
 def list_volumes(ctx, project, instance_id):
     "List EC2 volumes"
 
-    ec2 = start_session(ctx.obj["PROFILE"])
+    ec2 = start_session(ctx.obj["PROFILE"],ctx.obj["REGION"])
     instances = filter_instances(ec2, project, instance_id)
 
     for i in instances:
@@ -107,33 +111,52 @@ def instances():
     help="All instances")
 @click.option('--instance','instance_id', default=None,
     help="Only snapshot a specific instance")
+@click.option('--age', default = None,
+    help="if last snapshot made is older than age, a new snapshot will be made")
 @click.pass_context
-def create_snapshots(ctx, project,force, instance_id):
+def create_snapshots(ctx, project,force, instance_id, age):
     "Create snapshots for EC2 instances"
 
-    ec2 = start_session(ctx.obj["PROFILE"])
+    ec2 = start_session(ctx.obj["PROFILE"],ctx.obj["REGION"])
     instances = filter_instances(ec2, project, instance_id)
 
     if project or force or instance_id:
+
         for i in instances:
+          aged_out = True
           instance_state = i.state['Name']
           instance_state_current = instance_state
-          for v in i.volumes.all():
-              if has_pending_snapshot(v):
-                  print(" Skipping {0}, snapshot already in progress".format(v.id))
-                  continue
-              print("  Creating snapshot of {0}".format(v.id))
-              try:
-                  if instance_state == "running" and instance_state_current != "running":
-                        print("Stopping {0}...".format(i.id))
-                        i.stop()
-                        i.wait_until_stopped()
-                        instance_state_current = "stopped"
-                  v.create_snapshot(Description="Created by Shotty")
 
-              except botocore.exceptions.ClientError as e:
-                    print(" Could not create snapshot for {0}.".format(i.id) + str(e))
-                    continue
+          for v in i.volumes.all():
+              if age:
+                  utc_start_time = None
+                  now = calendar.timegm(time.gmtime())
+                  time_change = now - (86400 * int(age))
+                  for s in v.snapshots.all():
+                      gmt_start_time = s.start_time.strftime('%b %d, %Y @ %H:%M:%S UTC')
+                      utc_start_time = calendar.timegm(time.strptime(gmt_start_time, '%b %d, %Y @ %H:%M:%S UTC'))
+
+                      if s.state == 'completed' : break
+
+                  if utc_start_time:
+                      if int(utc_start_time) > int(time_change):
+                          aged_out = False
+
+              if aged_out is True:
+                  if has_pending_snapshot(v):
+                          print(" Skipping {0}, snapshot already in progress".format(v.id))
+                          continue
+                  print("  Creating snapshot of {0}".format(v.id))
+                  try:
+                      if instance_state == "running" and instance_state_current != "running":
+                            print("Stopping {0}...".format(i.id))
+                            i.stop()
+                            i.wait_until_stopped()
+                            instance_state_current = "stopped"
+                      v.create_snapshot(Description="Created by Shotty")
+                  except botocore.exceptions.ClientError as e:
+                        print(" Could not create snapshot for {0}.".format(i.id) + str(e))
+                        continue
 
         if instance_state == "running" and instance_state_now == "stopped":
             print("Starting {0}...".format(i.id))
@@ -154,7 +177,7 @@ def create_snapshots(ctx, project,force, instance_id):
 def list_instances(ctx, project):
     "List EC2 instances"
 
-    ec2 = start_session(ctx.obj["PROFILE"])
+    ec2 = start_session(ctx.obj["PROFILE"], ctx.obj["REGION"])
     instances = filter_instances(ec2, project)
 
     for i in instances:
@@ -181,7 +204,7 @@ def list_instances(ctx, project):
 def  stop_instances(ctx, project,force, instance_id):
     "Stop EC2 Instances"
 
-    ec2 = start_session(ctx.obj["PROFILE"])
+    ec2 = start_session(ctx.obj["PROFILE"],ctx.obj["REGION"])
     instances = filter_instances(ec2, project, instance_id)
 
     if project or force or instance_id:
@@ -208,7 +231,7 @@ def  stop_instances(ctx, project,force, instance_id):
 def start_instances(ctx, project, force, instance_id):
     "Start EC2 Instances"
 
-    ec2 = start_session(ctx.obj["PROFILE"])
+    ec2 = start_session(ctx.obj["PROFILE"],ctx.obj["REGION"])
     instances = filter_instances(ec2, project, instance_id)
 
     if project or force or instance_id:
@@ -235,7 +258,7 @@ def start_instances(ctx, project, force, instance_id):
 def reboot_instances(ctx, project, force, instance_id):
     "Reboot EC2 Instances"
 
-    ec2 = start_session(ctx.obj["PROFILE"])
+    ec2 = start_session(ctx.obj["PROFILE"],ctx.obj["REGION"])
     instances = filter_instances(ec2, project, instance_id)
 
     if project or force or instance_id:
